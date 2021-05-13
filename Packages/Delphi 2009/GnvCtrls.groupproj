@@ -1,0 +1,36 @@
+﻿	<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+		<PropertyGroup>
+			<ProjectGuid>{AE488CB5-0C7E-453C-98BC-E61C5D7372DC}</ProjectGuid>
+		</PropertyGroup>
+		<ItemGroup>
+			<Projects Include="GnvCtrls_D2009.dproj">
+				<Dependencies/>
+			</Projects>
+		</ItemGroup>
+		<ProjectExtensions>
+			<Borland.Personality>Default.Personality.12</Borland.Personality>
+			<Borland.ProjectType/>
+			<BorlandProject>
+				<Default.Personality/>
+			</BorlandProject>
+		</ProjectExtensions>
+		<Target Name="GnvCtrls_D2009">
+			<MSBuild Projects="GnvCtrls_D2009.dproj"/>
+		</Target>
+		<Target Name="GnvCtrls_D2009:Clean">
+			<MSBuild Targets="Clean" Projects="GnvCtrls_D2009.dproj"/>
+		</Target>
+		<Target Name="GnvCtrls_D2009:Make">
+			<MSBuild Targets="Make" Projects="GnvCtrls_D2009.dproj"/>
+		</Target>
+		<Target Name="Build">
+			<CallTarget Targets="GnvCtrls_D2009"/>
+		</Target>
+		<Target Name="Clean">
+			<CallTarget Targets="GnvCtrls_D2009:Clean"/>
+		</Target>
+		<Target Name="Make">
+			<CallTarget Targets="GnvCtrls_D2009:Make"/>
+		</Target>
+		<Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+	</Project>
