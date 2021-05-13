@@ -8,6 +8,7 @@ Version `0.1.0`
 
 Custom-painted controls. Use [GdiPlus](http://www.bilsen.com/gdiplus/) library.
 
+- TGnvComboBox
 - TGnvToolBar
 - TGnvTabBar
 - TGnvPanel
@@ -19,7 +20,6 @@ Custom-painted controls. Use [GdiPlus](http://www.bilsen.com/gdiplus/) library.
 
 Extended standard controls.
 
-- TGnvComboBox
 - TGnvSpinEdit
 - TGnvEdit
 - TGnvUpDown
