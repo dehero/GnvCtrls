@@ -193,16 +193,17 @@ type
 	TGnvSpinEdit = class(TGnvCustomEdit)
 	private
 		FButton: TGnvUpDown;
-		FEditorEnabled: Boolean;
     FOnUpDownMouseUp: TMouseEvent;
     FOnUpDownKeyUp: TKeyEvent;
 		function GetMinHeight: Integer;
 		function GetValue: LongInt;
-		function CheckValue (NewValue: LongInt): LongInt;
     procedure SetValue (NewValue: LongInt);
 		procedure SetEditRect;
     procedure WMSize(var Message: TWMSize); message WM_SIZE;
 		procedure CMEnter(var Message: TCMGotFocus); message CM_ENTER;
+    procedure CMExit(var Message: TCMExit); message CM_EXIT;
+    procedure WMPaste(var Message: TWMPaste); message WM_PASTE;
+    procedure WMCut(var Message: TWMCut); message WM_CUT;
     function GetIncrement: LongInt;
     function GetMaxValue: LongInt;
     function GetMinValue: LongInt;
@@ -220,15 +221,16 @@ type
     procedure ButtonKeyUp(Sender: TObject; var Key: Word;
       Shift: TShiftState);
   protected
-    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
 		procedure CreateParams(var Params: TCreateParams); override;
 		procedure CreateWnd; override;
 		function GetMaxTextWidth: Integer; override;
   public
 		constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
+    procedure GetChildren(Proc: TGetChildProc; Root: TComponent); override;
 		property Button: TGnvUpDown read FButton;
   published
+    property Align;
 		property Anchors;
     property ArrowKeys: Boolean read GetArrowKeys write SetArrowKeys default True;
 		property AutoSelect;
@@ -238,7 +240,6 @@ type
 		property Ctl3D;
 		property DragCursor;
     property DragMode;
-		property EditorEnabled: Boolean read FEditorEnabled write FEditorEnabled default True;
     property Enabled;
 		property Font;
 		property Increment: LongInt read GetIncrement write SetIncrement default 1;
@@ -254,6 +255,7 @@ type
 		property ShowHint;
     property TabOrder;
 		property TabStop;
+    property TextHint;
     property Thousands: Boolean read GetThousands write SetThousands default True;
     property Value: LongInt read GetValue write SetValue;
 		property Visible;
@@ -277,51 +279,6 @@ type
     property OnUpDownMouseUp: TMouseEvent read FOnUpDownMouseUp write FOnUpDownMouseUp;
 	end;
 
-  { TGnvComboBox }
-
-  TGnvComboBoxGetImageIndex = procedure(Sender: TObject; ItemIndex: Integer;
-    var ImageIndex: Integer) of object;
-  TGnvComboBoxItemPaint = procedure(const TargetCanvas: TCanvas;
-    State: TOwnerDrawState; Index: Integer; var Indent: Integer) of object;
-  TGnvComboBoxItemSelected = function(var Index: Integer): Boolean of object;
-
-  TGnvComboBox = class(TComboBox)
-  private
-    FGroupObject: TObject;
-    FShowGroups: Boolean;
-    FListInstance: Pointer;
-    FListHandle: HWnd;
-    FDefListProc: Pointer;
-    FItemPaintProc: TGnvComboBoxItemPaint;
-    FItemSelectedProc: TGnvComboBoxItemSelected;
-    FLastIndex: Integer;
-    FUpdating: Boolean;
-    FGetImageIndexProc: TGnvComboBoxGetImageIndex;
-    FImages: TImageList;
-    function ItemSelected(var Index: Integer): Boolean;
-    procedure ListWndProc(var Message: TMessage);
-    procedure CMMouseWheel(var Message: TCMMouseWheel); message CM_MOUSEWHEEL;
-    procedure CMRelease(var Message: TMessage); message CM_RELEASE;
-    procedure CNDrawItem(var Message: TWMDrawItem); message CN_DRAWITEM;
-    procedure SetImages(const Value: TImageList);
-    procedure SetShowGroups(const Value: Boolean);
-  protected
-    procedure Select; override;
-    procedure WndProc(var Message: TMessage); override;
-  public
-    constructor Create(AOwner: TComponent); override;
-    destructor Destroy; override;
-    procedure BeginUpdate;
-    procedure EndUpdate;
-    property GroupObject: TObject read FGroupObject;
-  published
-    property OnBeforeItemPaint: TGnvComboBoxItemPaint read FItemPaintProc write FItemPaintProc;
-    property OnGetImageIndex: TGnvComboBoxGetImageIndex read FGetImageIndexProc write FGetImageIndexProc;
-    property OnItemSelected: TGnvComboBoxItemSelected read FItemSelectedProc write FItemSelectedProc;
-    property Images: TImageList read FImages write SetImages;
-    property ShowGroups: Boolean read FShowGroups write SetShowGroups;
-  end;
-
   TGnvButton = class(TButton)
   private
     FAlignment: TAlignment;
@@ -332,7 +289,7 @@ type
     function CanAutoSize(var NewWidth, NewHeight: Integer): Boolean; override;
     procedure CreateParams(var Params: TCreateParams); override;
   public
-    constructor Create(AOwner: TComponent);
+    constructor Create(AOwner: TComponent); override;
   published
     property Alignment: TAlignment read FAlignment write SetAlignment;
     property AutoSize;
@@ -387,12 +344,11 @@ procedure Register;
 implementation
 
 uses
-  StrUtils, Themes,
-  GnvCtrls;
+  StrUtils, Themes;
 
 procedure Register;
 begin
-	RegisterComponents('GnvCtrls', [TGnvComboBox, TGnvSpinEdit, TGnvEdit,
+	RegisterComponents('GnvCtrls', [TGnvSpinEdit, TGnvEdit,
 		TGnvUpDown, TGnvButton, TGnvCheckBox, TGnvRadioButton, TGnvScrollBox,
 		TGnvMemo]);
 end;
@@ -441,7 +397,6 @@ begin
     style := style and not (CS_HREDRAW or CS_VREDRAW) or CS_DBLCLKS;
 end;
 
-[UIPermission(SecurityAction.LinkDemand, Window=UIPermissionWindow.AllWindows)]
 procedure TGnvUpDown.CreateWnd;
 var
   OrigWidth: Integer;
@@ -670,7 +625,7 @@ begin
       if FAssociate is TCustomEdit then
         TCustomEdit(FAssociate).Text := IntToStr(FPosition);
 		if HandleAllocated then
-			SendMessage(Handle, UDM_SETPOS, 0, FPosition);
+			SendMessage(Handle, UDM_SETPOS32, 0, FPosition);
 		// Fixes buddy window not recieving text change event on manual position change
 		if Assigned(FAssociate) then FAssociate.Perform(CM_TEXTCHANGED, 0, 0);
   end;
@@ -752,239 +707,6 @@ begin
 	Value.Left := OrigLeft - DeltaLeft;
 end;
 
-{ TGnvComboBox }
-
-procedure TGnvComboBox.BeginUpdate;
-begin
-  FUpdating := True;
-end;
-
-procedure TGnvComboBox.CMMouseWheel(var Message: TCMMouseWheel);
-begin
-  // Need this handler to make mouse scroll work
-end;
-
-procedure TGnvComboBox.CMRelease(var Message: TMessage);
-begin
-  Free;
-end;
-
-procedure TGnvComboBox.CNDrawItem(var Message: TWMDrawItem);
-var
-  GroupItem: Boolean;
-  State: TOwnerDrawState;
-  ImageR: TRect;
-  Indent, Offset, BktOffset, ImageIndex: Integer;
-  Text, BktText: string;
-begin
-  with Message.DrawItemStruct^ do
-  begin
-    // Define item display parameters
-    State := TOwnerDrawState(LongRec(itemState).Lo);
-    if (itemState and ODS_DEFAULT) <> 0 then
-      Include(State, odDefault);
-
-    // Bind control canvas to items display canvas
-    Canvas.Handle := hDC;
-    Canvas.Font   := Font;
-    Canvas.Brush  := Brush;
-    TControlCanvas(Canvas).UpdateTextFlags;
-
-    // Define group item
-    GroupItem := (ItemID < Items.Count) and (Items.Objects[itemID] = FGroupObject) and FShowGroups;
-
-    // Change group and no-group item indent
-    if FShowGroups and DroppedDown then
-    begin
-      if GroupItem then
-        Indent := 3
-      else
-        Indent := 11;
-    end
-    else
-      Indent := 1;
-
-    // Group items use bold font and cannot be selected
-    if GroupItem then
-      Canvas.Font.Style := [fsBold]
-    else if odSelected in State then
-    begin
-      Canvas.Brush.Color := clHighlight;
-      Canvas.Font.Color := clHighlightText;
-    end;
-
-    if Assigned(FItemPaintProc) then
-      FItemPaintProc(Canvas, State, itemID, Indent);
-
-    Offset := 0;
-    case Font.Size of
-      8:
-      begin
-        Offset := 1;
-      end;
-      10:
-      begin
-        Offset := 0;
-        rcItem.Top := rcItem.Top - 1;
-        rcItem.Bottom := rcItem.Bottom + 1;
-      end;
-    end;
-
-    // Paint element background and display text with precalculated offset
-    Canvas.FillRect(rcItem);
-
-    // Paint image
-    if Assigned(FImages) then
-    begin
-      if Assigned(FGetImageIndexProc) then
-        FGetImageIndexProc(Self, itemID, ImageIndex);
-
-      if ImageIndex > -1 then
-      begin
-        Indent := Indent + FImages.Width + 3;
-
-        ImageR := rcItem;
-        ImageR.Right := ImageR.Left + FImages.Width;
-
-        GnvDrawImage(Canvas, ImageR, FImages, ImageIndex);
-      end;
-    end;
-
-    Text := Items[itemID];
-    // Find text after bracket
-    BktOffset := Pos('(', Text);
-    if BktOffset > 0 then
-    begin
-      BktText := RightStr(Text, Length(Text) - BktOffset + 1);
-      Text := LeftStr(Text, BktOffset - 1);
-      BktOffset := Canvas.TextExtent(Text).cx;
-    end;
-
-    // Paint main text
-    Canvas.TextOut(rcItem.Left + Indent, rcItem.Top + Offset, Text);
-    // Paint text after bracket
-    if BktOffset > 0 then
-    begin
-      Canvas.Font.Color := GnvBlendColors(Canvas.Font.Color, Canvas.Brush.Color, 95);
-      Canvas.TextOut(rcItem.Left + Indent + BktOffset, rcItem.Top + Offset, BktText);
-    end;
-
-    // Paint focus rectangle
-    {
-    if (odFocused in State) and not GroupItem then
-      DrawFocusRect(hDC, rcItem);
-    }
-
-    // Unbind canvas from control
-    Canvas.Handle := 0;
-  end;
-end;
-
-constructor TGnvComboBox.Create(AOwner: TComponent);
-begin
-  inherited;
-
-  FGroupObject := TObject.Create;
-  FListInstance := MakeObjectInstance(ListWndProc);
-  FUpdating := False;
-  FImages := nil;
-
-  Style := csOwnerDrawFixed;
-  DropDownCount := 10;
-end;
-
-destructor TGnvComboBox.Destroy;
-begin
-  FGroupObject.Free;
-  inherited;
-end;
-
-procedure TGnvComboBox.EndUpdate;
-begin
-  FUpdating := False;
-end;
-
-function TGnvComboBox.ItemSelected(var Index: Integer): Boolean;
-begin
-  Result := True;
-  FLastIndex := Index;
-  if Assigned(FItemSelectedProc) then
-    Result := FItemSelectedProc(FLastIndex);
-  Index := FLastIndex;
-end;
-
-procedure TGnvComboBox.ListWndProc(var Message: TMessage);
-var
-  Index: Integer;
-  Selected: Boolean;
-begin
-  if (Message.Msg = LB_GETCURSEL) and (FUpdating) then
-  begin
-    Message.Result := FLastIndex;
-    Exit;
-  end;
-
-  Selected := (Message.Msg = WM_LBUTTONUP) or ((Message.Msg = WM_CHAR) and
-    (TWMKey(Message).CharCode = VK_SPACE));
-
-  if Selected then
-  begin
-    Index := CallWindowProcA(FDefListProc, FListHandle, LB_GETCURSEL, Message.WParam, Message.LParam);
-    if (Index > -1) and (Items.Objects[Index] = FGroupObject) or not ItemSelected(Index) then
-    begin
-      ItemIndex := Index;
-      Message.Result := 0;
-      Exit;
-    end;
-  end;
-
-  ComboWndProc(Message, FListHandle, FDefListProc);
-end;
-
-procedure TGnvComboBox.Select;
-begin
-  // Cannot select group item
-  if FShowGroups and (ItemIndex > -1) and (Items.Objects[ItemIndex] = FGroupObject) then
-    ItemIndex := ItemIndex + 1;
-end;
-
-procedure TGnvComboBox.SetImages(const Value: TImageList);
-begin
-  if FImages <> Value then
-  begin
-    FImages := Value;
-  end;
-end;
-
-procedure TGnvComboBox.SetShowGroups(const Value: Boolean);
-begin
-  FShowGroups := Value;
-end;
-
-procedure TGnvComboBox.WndProc(var Message: TMessage);
-var
-  LWnd : HWND;
-begin
-
-  if Message.Msg = WM_CTLCOLORLISTBOX then
-  begin
-    // If the listbox hasn't been subclassed yet, do so...
-    if (FListHandle = 0) then
-    begin
-      LWnd := Message.LParam;
-      if (LWnd <> 0) and (LWnd <> FDropHandle) then
-      begin
-        // Save the listbox handle
-        FListHandle := LWnd;
-        FDefListProc := Pointer(GetWindowLong(FListHandle, GWL_WNDPROC));
-        SetWindowLong(FListHandle, GWL_WNDPROC, Longint(FListInstance));
-      end;
-    end;
-  end;
-
-  inherited;
-end;
-
 { TGnvCustomEdit }
 
 procedure TGnvCustomEdit.AdjustWidth;
@@ -1052,7 +774,6 @@ begin
   FButton.OnKeyUp := ButtonKeyUp;
 //  Text := '0';
   ControlStyle := ControlStyle - [csSetCaption];
-  FEditorEnabled := True;
 	ParentBackground := False;
 end;
 
@@ -1080,7 +801,7 @@ procedure TGnvSpinEdit.CreateParams(var Params: TCreateParams);
 begin
   inherited CreateParams(Params);
 {  Params.Style := Params.Style and not WS_BORDER;  }
-  Params.Style := Params.Style or ES_MULTILINE or WS_CLIPCHILDREN;
+  Params.Style := Params.Style or WS_CLIPCHILDREN;//ES_MULTILINE or WS_CLIPCHILDREN;
 end;
 
 procedure TGnvSpinEdit.CreateWnd;
@@ -1125,6 +846,18 @@ end;
 procedure TGnvSpinEdit.SetThousands(const Value: Boolean);
 begin
   FButton.SetThousands(Value);
+end;
+
+procedure TGnvSpinEdit.WMCut(var Message: TWMCut);
+begin
+  if ReadOnly then Exit;
+  inherited;
+end;
+
+procedure TGnvSpinEdit.WMPaste(var Message: TWMPaste);
+begin
+  if ReadOnly then Exit;
+  inherited;
 end;
 
 procedure TGnvSpinEdit.WMSize(var Message: TWMSize);
@@ -1219,24 +952,17 @@ begin
     FOnUpDownMouseUp(Self, Button, Shift, X, Y);
 end;
 
-function TGnvSpinEdit.CheckValue(NewValue: LongInt): LongInt;
-begin
-	Result := NewValue;
-
-	if (GetMaxValue <> GetMinValue) then
-	begin
-		if NewValue < GetMinValue then
-			Result := GetMinValue
-		else if NewValue > GetMaxValue then
-			Result := GetMaxValue;
-	end;
-end;
-
 procedure TGnvSpinEdit.CMEnter(var Message: TCMGotFocus);
 begin
-//  if AutoSelect and not (csLButtonDown in ControlState) then
-//    SelectAll;
+  if AutoSelect and not (csLButtonDown in ControlState) then
+    SelectAll;
   inherited;
+end;
+
+procedure TGnvSpinEdit.CMExit(var Message: TCMExit);
+begin
+  inherited;
+  Text := IntToStr(GetValue);
 end;
 
 { TGnvButton }
@@ -1253,14 +979,31 @@ var
 begin
   DC := GetDC(Handle);
   try
-    Margin := 8 + Abs(Font.Height) div 5;
-    SetRect(R, 0, 0, NewWidth - Margin, NewHeight - Margin);
-    SaveFont := SelectObject(DC, Font.Handle);
-    DrawFlags := DT_LEFT or DT_CALCRECT or WordBreak[WordWrap];
-    DrawText(DC, PChar(' ' + Caption + ' '), -1, R, DrawFlags);
-    SelectObject(DC, SaveFont);
-    NewWidth := R.Right + Margin;
-    NewHeight := R.Bottom + Margin;
+    NewWidth := 0;
+    NewHeight := 0;
+    Margin := 6;
+
+    if Caption <> '' then
+    begin
+      Margin := Margin + Abs(Font.Height) div 5;
+      SetRect(R, 0, 0, NewWidth - Margin, NewHeight - Margin);
+      SaveFont := SelectObject(DC, Font.Handle);
+      DrawFlags := DT_LEFT or DT_CALCRECT or WordBreak[WordWrap];
+      DrawText(DC, PChar(' ' + Caption + ' '), -1, R, DrawFlags);
+      SelectObject(DC, SaveFont);
+      NewWidth := R.Right;
+      NewHeight := R.Bottom;
+    end;
+
+    if Assigned(Images) and (ImageIndex > -1) then
+    begin
+      NewWidth := NewWidth + Images.Width;
+      if Images.Height > NewHeight then
+        NewHeight := Images.Height;
+    end;
+
+    NewHeight := NewHeight + Margin;
+    NewWidth := NewWidth + Margin;
   finally
     ReleaseDC(Handle, DC);
   end;
@@ -1297,8 +1040,6 @@ begin
 end;
 
 procedure TGnvButton.SetAlignment(const Value: TAlignment);
-var
-  DWStyle: LongWord;
 begin
   if FAlignment <> Value then
   begin
